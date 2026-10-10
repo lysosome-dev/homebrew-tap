@@ -1,0 +1,78 @@
+# Keeps Formula/lysosome.rb in sync with the latest lysosome-dev/cli release.
+#
+# The CLI repo has no token that can push here (by design), so the tap pulls:
+# every 30 minutes (or on demand) it renders the formula from the latest
+# release's checksums, installs and `brew test`s it, then commits it with this
+# repo's own GITHUB_TOKEN.
+name: Update formula
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (default: latest release)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-formula
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render formula
+        id: render
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$TAG" ] && ! TAG="$(gh api repos/lysosome-dev/cli/releases/latest --jq .tag_name 2>/dev/null)"; then
+            echo "lysosome-dev/cli has no published release yet; nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          .github/scripts/render-formula.sh "$TAG" > "$RUNNER_TEMP/lysosome.rb"
+          cp "$RUNNER_TEMP/lysosome.rb" Formula/lysosome.rb
+          version="$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/lysosome.rb)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          git add Formula/lysosome.rb
+          if git diff --cached --quiet; then
+            echo "Formula already at $version"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --cached
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit locally
+        if: steps.render.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "lysosome ${{ steps.render.outputs.version }}"
+
+      - name: Install and test with Homebrew
+        if: steps.render.outputs.changed == 'true'
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew tap lysosome-dev/tap "$GITHUB_WORKSPACE"
+          brew install lysosome-dev/tap/lysosome
+          brew test lysosome-dev/tap/lysosome
+          lysosome --version
+
+      - name: Push
+        if: steps.render.outputs.changed == 'true'
+        run: git push origin HEAD:main
