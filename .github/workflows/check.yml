@@ -1,0 +1,25 @@
+# Style and audit checks for hand-written casks on every PR.
+name: Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths: ["Casks/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  casks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tap this checkout
+        run: |
+          mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"
+          ln -s "$GITHUB_WORKSPACE" "$(brew --repository)/Library/Taps/lysosome-dev/homebrew-tap"
+      - run: brew style Casks/
+      # No --online: the download URLs only resolve once a build is published.
+      - run: brew audit --cask --strict lysosome-dev/tap/lysosome-app
