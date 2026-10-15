@@ -1,0 +1,93 @@
+# Keeps Casks/lysosome-app.rb in sync with the desktop app build that
+# lysosome.dev/download currently serves (https://lysosome.dev/app/downloads.json).
+#
+# Same pull model as update-formula.yml: every 30 minutes (or on demand) a
+# cheap check compares the promoted version with the cask. Only when it moved
+# does a macOS job render the cask (downloading and hashing both DMGs), style,
+# audit and install it, then commit it with this repo's own GITHUB_TOKEN.
+name: Update cask
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App version to publish (default: the promoted build)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-cask
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare promoted version with the cask
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            VERSION="$(curl -fsSL --retry 3 https://lysosome.dev/app/downloads.json | jq -r .version)"
+          fi
+          current="$(sed -n 's/^  version "\(.*\)"$/\1/p' Casks/lysosome-app.rb)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$VERSION" = "$current" ]; then
+            echo "Cask already at $current"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Cask $current -> $VERSION"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  update:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render cask
+        run: |
+          .github/scripts/render-cask.sh "$VERSION" > "$RUNNER_TEMP/lysosome-app.rb"
+          cp "$RUNNER_TEMP/lysosome-app.rb" Casks/lysosome-app.rb
+          git diff
+
+      - name: Tap this checkout
+        run: |
+          mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"
+          ln -s "$GITHUB_WORKSPACE" "$(brew --repository)/Library/Taps/lysosome-dev/homebrew-tap"
+
+      - name: Style, audit and install with Homebrew
+        run: |
+          brew style Casks/
+          brew audit --cask --online --strict lysosome-dev/tap/lysosome-app
+          brew install --cask lysosome-dev/tap/lysosome-app
+          test -d /Applications/lysosome.app
+          defaults read /Applications/lysosome.app/Contents/Info.plist CFBundleShortVersionString | grep -Fx "$VERSION"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/lysosome-app.rb
+          git commit -m "lysosome-app $VERSION"
+          # update-formula.yml may have pushed in the meantime.
+          git pull --rebase origin main
+          git push origin HEAD:main

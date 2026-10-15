@@ -21,5 +21,4 @@ jobs:
           mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"
           ln -s "$GITHUB_WORKSPACE" "$(brew --repository)/Library/Taps/lysosome-dev/homebrew-tap"
       - run: brew style Casks/
-      # No --online: the download URLs only resolve once a build is published.
-      - run: brew audit --cask --strict lysosome-dev/tap/lysosome-app
+      - run: brew audit --cask --online --strict lysosome-dev/tap/lysosome-app
