@@ -16,6 +16,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # The runner image's Homebrew can lag; audit with the version users have.
+      - run: brew update --quiet
       - name: Tap this checkout
         run: |
           mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"

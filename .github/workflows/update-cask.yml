@@ -71,6 +71,8 @@ jobs:
 
       - name: Tap this checkout
         run: |
+          # The runner image's Homebrew can lag; audit with the version users have.
+          brew update --quiet
           mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"
           ln -s "$GITHUB_WORKSPACE" "$(brew --repository)/Library/Taps/lysosome-dev/homebrew-tap"
 
