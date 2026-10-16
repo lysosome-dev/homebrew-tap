@@ -16,10 +16,11 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # The runner image's Homebrew can lag; audit with the version users have.
+      - run: brew update --quiet
       - name: Tap this checkout
         run: |
           mkdir -p "$(brew --repository)/Library/Taps/lysosome-dev"
           ln -s "$GITHUB_WORKSPACE" "$(brew --repository)/Library/Taps/lysosome-dev/homebrew-tap"
       - run: brew style Casks/
-      # No --online: the download URLs only resolve once a build is published.
-      - run: brew audit --cask --strict lysosome-dev/tap/lysosome-app
+      - run: brew audit --cask --online --strict lysosome-dev/tap/lysosome-app
