@@ -21,7 +21,6 @@ cask "lysosome-app" do
   end
 
   auto_updates true
-  depends_on formula: "lysosome-dev/tap/lysosome"
   depends_on :macos
 
   app "lysosome.app"
@@ -34,4 +33,9 @@ cask "lysosome-app" do
     "~/Library/Saved Application State/dev.lysosome.app.savedState",
     "~/Library/WebKit/dev.lysosome.app",
   ]
+
+  caveats <<~EOS
+    The app bundles its own lysosome CLI. To use lysosome in a terminal too:
+      brew install lysosome-dev/tap/lysosome
+  EOS
 end
